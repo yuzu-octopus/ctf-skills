@@ -92,9 +92,9 @@ def _mod_sqrt(n, p):
     """sqrt(n) mod odd prime p, or None if non-residue. sympy first, TS fallback."""
     try:
         from sympy.ntheory import sqrt_mod
-        r = sqrt_mod(n, p, all_roots=False)  # returns root or raises
-        return int(r)
-    except Exception:
+        r = sqrt_mod(n, p, all_roots=False)  # returns int root or None if non-residue
+        return int(r) if r is not None else None
+    except (ImportError, ValueError):
         pass
     # Fallback Tonelli-Shanks (no dependency).
     if n == 0:
@@ -132,9 +132,15 @@ def point_of_order(E, N, r):
         if rhs == 0:
             y = 0
         else:
-            if pow(rhs, (p - 1) // 2, p) != 1:  # Euler criterion: non-residue
-                continue
-            y = _mod_sqrt(rhs, p)  # generic Tonelli-Shanks, works for any odd p
+            # Legendre check: gmpy2.legendre (fast C-GMP) with pow Euler fallback
+            try:
+                import gmpy2
+                if gmpy2.legendre(rhs, p) != 1:
+                    continue
+            except ImportError:
+                if pow(rhs, (p - 1) // 2, p) != 1:  # Euler criterion: non-residue
+                    continue
+            y = _mod_sqrt(rhs, p)  # sympy sqrt_mod first, Tonelli-Shanks fallback
             if y is None:
                 continue
         for yy in (y, p - y):
@@ -175,8 +181,8 @@ def mine_b_prime(p, a, smooth_bound=5000, max_tries=5000):
 
 def recover_via_crt(residues, moduli):
     """Combine k mod r_i via CRT (pairwise coprime moduli)."""
-    x, M = crt(moduli, residues)
-    return int(x % M)
+    res = crt(moduli, residues)
+    return int(res[0] % res[1]) if res is not None else None
 
 # Usage sketch (large p requires Sage for E.order()):
 # b_prime, N, r = mine_b_prime(p, -3)  # Codegate a=-3 case
@@ -523,11 +529,17 @@ def build_hnp_8sig_lattice_sage(q, rs, ss, hs, leaked, t):
 
 ```python
 def embedding_degree(p, r, kmax=6):
-    # k = ord_r(p); return k if <=kmax else None
-    if r == 1:
+    """Embedding degree k = ord_r(p). SymPy n_order first, bounded loop fallback."""
+    if r <= 1:
         return None
+    try:
+        from sympy.ntheory import n_order
+        k = n_order(p % r, r)
+        return k if k <= kmax else None
+    except (ImportError, ValueError):
+        pass
     cur = p % r
-    for k in range(1, kmax+1):
+    for k in range(1, kmax + 1):
         if cur == 1:
             return k
         cur = (cur * p) % r
@@ -644,6 +656,7 @@ def has_glv_endomorphism(p, a, b):
 
 **Attack:** Compare correct vs faulty ciphertext, recover key bit-by-bit:
 ```python
+# Bit flip simulation: gmpy2.bit_flip(scalar, bit_i) or scalar ^ (1 << bit_i)
 # For each key bit position:
 # If fault at bit i changes output -> key bit i affects computation
 # Binary distinguisher: faulty_output == correct_output -> bit is 0
@@ -682,6 +695,7 @@ def clock_pow(P, n, p):
 ```python
 # Given points on the curve, p divides (x^2 + y^2 - 1)
 from math import gcd
+from functools import reduce
 vals = [x**2 + y**2 - 1 for x, y in known_points]
 p = reduce(gcd, vals)
 # May need to remove small factors
@@ -738,12 +752,14 @@ for t in range(255):
 **Recovery:**
 ```python
 from hashlib import sha256
+from Crypto.Util.number import inverse
 
 # Two signatures (r, s1) and (r, s2) with same r → same nonce k
 h1 = int(sha256(msg1).hexdigest(), 16)
 h2 = int(sha256(msg2).hexdigest(), 16)
 n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141  # secp256k1 order
 
+# pow(a, -1, n) is stdlib Python 3.8+; Crypto.Util.number.inverse is fallback
 k = ((h1 - h2) * pow(s1 - s2, -1, n)) % n
 d = ((s1 * k - h1) * pow(r, -1, n)) % n  # private key
 ```
@@ -759,7 +775,10 @@ d = ((s1 * k - h1) * pow(r, -1, n)) % n  # private key
 **Pattern:** Two DSA (Digital Signature Algorithm) signatures sharing the same nonce k (same r value) leak the private key. Identical in principle to ECDSA nonce reuse but uses DSA-specific group parameters.
 
 ```python
+from Crypto.Util.number import inverse
+
 # Two signatures (r, s1, H(m1)) and (r, s2, H(m2)) with same r
+# pow(..., -1, q) is stdlib; Crypto.Util.number.inverse is fallback
 k = ((H_m1 - H_m2) * pow(s1 - s2, -1, q)) % q
 x = ((s1 * k - H_m1) * pow(r, -1, q)) % q  # private key
 # Then forge signatures for arbitrary messages
@@ -788,7 +807,7 @@ def recover_dsa_key(signatures, q, g, p):
             den = (s1 * k1 * r2 - s2 * k2 * r1) % q
             if den == 0:
                 continue
-            x = (num * inverse(den, q)) % q
+            x = (num * pow(den, -1, q)) % q  # stdlib pow; Crypto.Util.number.inverse fallback
             # Verify: check if r1 == (g^k1 mod p) mod q
             if pow(g, k1, p) % q == r1:
                 return x
@@ -842,9 +861,11 @@ subprocess.run(["fastcoll", "-p", prefix_file, "-o", "col1", "col2"])
 sig1 = sign(msg1, counter1)  # uses MD5(prefix + counter1)
 sig2 = sign(msg2, counter2)  # uses MD5(prefix + counter2) = same hash!
 
-# Standard DSA nonce reuse recovery
-k = (hash1 - hash2) * modinv(sig1.s - sig2.s, q) % q
-private_key = (sig1.s * k - hash1) * modinv(sig1.r, q) % q
+from Crypto.Util.number import inverse
+
+# Standard DSA nonce reuse recovery (stdlib pow or Crypto.Util.number.inverse)
+k = (hash1 - hash2) * pow(sig1.s - sig2.s, -1, q) % q
+private_key = (sig1.s * k - hash1) * pow(sig1.r, -1, q) % q
 ```
 
 **Key insight:** MD5 collision generators like `fastcoll` produce pairs of inputs with identical hashes from a chosen prefix. When a signature scheme derives its nonce from an MD5 hash of controllable data, manufacturing a collision produces nonce reuse, enabling standard private key recovery.
@@ -858,7 +879,10 @@ private_key = (sig1.s * k - hash1) * modinv(sig1.r, q) % q
 **Pattern:** An Ed25519 signer reuses the same private-key scalar with deterministic nonce derivation, but the public key changes between signatures (fault injection or swapped key material). Two signatures `(R1, S1, h1)` and `(R2, S2, h2)` share `a`, so `a = (S1 - S2) * inverse(h1 - h2) mod L`.
 
 ```python
+from Crypto.Util.number import inverse
+
 L = 2**252 + 27742317777372353535851937790883648493
+# pow(..., -1, L) is stdlib; Crypto.Util.number.inverse is fallback
 a = (S1 - S2) * pow(h1 - h2, -1, L) % L   # recovered scalar
 ```
 

@@ -46,31 +46,43 @@ for guess_secret in (1, p - 1):
 Same primitive as [advanced-math.md](advanced-math.md#baby-step-giant-step-for-general-dlp): factor `p-1`, solve DLP per prime-power subgroup via BSGS, CRT combine. CTF pattern is server regenerating weak `p` per connection: retry until smooth.
 
 ```python
-from sympy import factorint
-from sympy.ntheory.modular import crt
-from math import isqrt
-
-def bsgs(g, h, p, order):
-    m = isqrt(order) + 1
-    table, cur = {}, 1
-    for j in range(m):
-        table.setdefault(cur, j)
-        cur = cur * g % p
-    factor = pow(pow(g, -1, p), m, p)
-    gamma = h
-    for i in range(m):
-        if gamma in table:
-            return i * m + table[gamma]
-        gamma = gamma * factor % p
-    return None
+from sympy.ntheory import discrete_log
 
 def pohlig_hellman_dh(g, h, p):
+    """Solve g^x = h mod p when p-1 is smooth.
+    SymPy's discrete_log handles factorization, prime-power subgroup
+    BSGS, and CRT combination in a single call.
+    """
+    try:
+        from sympy.ntheory import discrete_log
+        return int(discrete_log(p, h, g))
+    except ImportError:
+        pass
+    # Pure-Python fallback (see advanced-math.md for standalone bsgs/crt):
+    from math import isqrt
+    from sympy import factorint
+    from sympy.ntheory.modular import crt
+
     order = p - 1
     res, mod = [], []
     for prime, exp in factorint(order).items():
         pe = prime ** exp
         co = order // pe
-        xi = bsgs(pow(g, co, p), pow(h, co, p), p, pe)
+        # BSGS on prime-power subgroup of order pe
+        m = isqrt(pe) + 1
+        base = pow(g, co, p)
+        table, cur = {}, 1
+        for j in range(m):
+            table.setdefault(cur, j)
+            cur = cur * base % p
+        factor = pow(pow(base, -1, p), m, p)
+        gamma = pow(h, co, p)
+        xi = None
+        for i in range(m):
+            if gamma in table:
+                xi = i * m + table[gamma]
+                break
+            gamma = gamma * factor % p
         res.append(xi)
         mod.append(pe)
     x, _ = crt(mod, res)
