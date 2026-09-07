@@ -850,3 +850,35 @@ r = (f.derivative()).roots()[0][0]
 **Key insight:** Discriminant `-16(4a^3 + 27b^2)` zero means singular. Singular curves are either cusps (map to `(GF(p), +)`) or nodes (map to `GF(p)^*`) -- both with polynomial-time DLP.
 
 **References:** hxp CTF 2018 -- writeup 12563
+
+---
+
+## X25519 Low-Order Points + All-Zero Check (RFC 7748)
+
+Curve25519 has cofactor 8: group order `8q`. X25519 clamps the scalar (clears low 3 bits, sets high bit) so a small-order peer point always yields the all-zero shared secret regardless of private key. RFC 7748 §6 says implementations MAY reject all-zero `K` (OR all bytes, abort if zero); many do not. CTF pattern: server skips the check, attacker sends low-order `u`, forces predictable `K`.
+
+```python
+def x25519_clamped(sk: bytes) -> int:
+    assert len(sk) == 32
+    b = bytearray(sk)
+    b[0] &= 0xF8   # clear low 3 bits -> multiple of cofactor 8
+    b[31] &= 0x7F  # clear high bit
+    b[31] |= 0x40  # set second-high bit
+    return int.from_bytes(bytes(b), "little")
+
+def is_all_zero(shared: bytes) -> bool:
+    r = 0
+    for byte in shared:
+        r |= byte
+    return r == 0  # constant-time shape, same as RFC 7748
+
+# Triage: u = 0 and u = 1 are always small-order (orders 4 and 4).
+# Full low-order set has 8 points of order dividing 8; enumerate others by
+# scanning small u and keeping inputs whose X25519 output is all-zero for
+# two independent clamped scalars (Sage: E = EllipticCurve(GF(2^255-19), [0,486662,0,1,0])).
+LOW_ORDER_PROBES = (0, 1)
+```
+
+**Workflow:** send each probe `u` (LE 32-byte encoding), derive `KDF(K)` candidates for the ≤8 possible outputs (usually just all-zero), match server MAC/ciphertext/success. If server accepts all-zero `K`, key is known with 1-2 queries. If it aborts, the check exists: pivot to twist/invalid-curve on a non-Montgomery path instead.
+
+**References:** RFC 7748 §6-7; Kleppmann curve25519 notes (cofactor/small-subgroup); Valenta et al. ePrint 2016/995 (measuring small-subgroup DH).

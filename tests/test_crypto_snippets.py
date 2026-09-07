@@ -967,3 +967,56 @@ class TestCryptoSnippets(unittest.TestCase):
         # (1+2x+3x^2+4x^3)(1+x) = 1+3x+5x^2+7x^3-4x^4 mod (x^4+1)
         # x^4 = -1, so constant term is 1-4 = -3.
         self.assertEqual(prod, [(-3) % q, 3, 5, 7])
+
+    # --- Classic DH: trivial g + small-subgroup confinement toy -------------
+
+    def test_dh_trivial_and_confinement(self) -> None:
+        # Toy p with smooth p-1 for deterministic confinement check.
+        # p = 211, p-1 = 2 * 3 * 5 * 7. Static secret b = 42.
+        p, g, b = 211, 2, 42
+        # Trivial g probes: g=1 -> S=1 always; g=p-1 order 2 -> S in {1, p-1}.
+        self.assertEqual(pow(1, b, p), 1)
+        self.assertIn(pow(p - 1, b, p), (1, p - 1))
+        # Confinement: element of order 7 leaks b mod 7 via oracle brute force.
+        r = 7
+        w = pow(g, (p - 1) // r, p)
+        self.assertEqual(pow(w, r, p), 1)
+        self.assertNotEqual(w, 1)
+        server_s = pow(w, b, p)
+        found = next(j for j in range(r) if pow(w, j, p) == server_s)
+        self.assertEqual(found, b % r)
+        # CRT across r=3,5,7 recovers b mod 105; b=42 < 105 so full recovery.
+        if pytest is not None:
+            pytest.importorskip("sympy")
+        else:
+            try:
+                import sympy  # noqa: F401
+            except ImportError:
+                self.skipTest("sympy not installed")
+        from sympy.ntheory.modular import crt
+
+        mods, rems = [], []
+        for rr in (3, 5, 7):
+            ww = pow(g, (p - 1) // rr, p)
+            ss = pow(ww, b, p)
+            mods.append(rr)
+            rems.append(next(j for j in range(rr) if pow(ww, j, p) == ss))
+        x, _ = crt(mods, rems)
+        self.assertEqual(int(x % 105), b % 105)
+
+    # --- X25519: clamping + all-zero check shape ------------------------------
+
+    def test_x25519_clamp_allzero(self) -> None:
+        def clamped(sk: bytes) -> int:
+            b = bytearray(sk)
+            b[0] &= 0xF8
+            b[31] &= 0x7F
+            b[31] |= 0x40
+            return int.from_bytes(bytes(b), "little")
+
+        # Clamp clears low 3 bits -> multiple of cofactor 8.
+        sk = bytes(range(32))
+        self.assertEqual(clamped(sk) % 8, 0)
+        # All-zero check shape from RFC 7748: OR all bytes.
+        self.assertTrue(all(v == 0 for v in bytes(32)))
+        self.assertFalse(all(v == 0 for v in b"\x00" * 31 + b"\x01"))

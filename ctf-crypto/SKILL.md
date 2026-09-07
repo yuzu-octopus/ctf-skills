@@ -48,7 +48,8 @@ brew install hashcat
 - [stream-ciphers.md](stream-ciphers.md) - Stream cipher attacks: LFSR (Berlekamp-Massey, correlation attack, known-plaintext, Galois vs Fibonacci, Galois tap recovery via autocorrelation), RC4 second-byte bias, XOR consecutive byte correlation
 - [rsa-attacks.md](rsa-attacks.md) - RSA attacks: small e (cube root), common modulus, Wiener's, Pollard's p-1, Hastad's broadcast, Hastad with linear padding (Coppersmith), Franklin-Reiter related message (e=3), Coppersmith linearly-related primes, Fermat/consecutive primes, multi-prime, restricted-digit, Coppersmith structured primes, Manger oracle, polynomial hash
 - [rsa-attacks-2.md](rsa-attacks-2.md) - RSA attacks (specialized): RSA p=q validation bypass, cube root CRT gcd(e,phi)>1, factoring from phi(n) multiple, multiplicative homomorphism signature forgery, weak keygen via base representation, RSA with gcd(e,phi)>1 exponent reduction, batch GCD shared prime factoring, partial key recovery from dp/dq/qinv, RSA-CRT fault attack, homomorphic decryption oracle bypass, small prime CRT decomposition, Montgomery reduction timing attack, Bleichenbacher low-exponent signature forgery, RSA signature bypass with e=1 and crafted modulus
-- [ecc-attacks.md](ecc-attacks.md) - ECC attacks: small subgroup, invalid curve, Smart's attack (anomalous, with Sage code), fault injection, clock group DLP, Pohlig-Hellman, ECDSA nonce reuse, Ed25519 torsion side channel, DSA nonce reuse, DSA key recovery via MD5 collision on k-generation
+- [ecc-attacks.md](ecc-attacks.md) - ECC attacks: small subgroup, invalid curve, Smart's attack (anomalous, with Sage code), fault injection, clock group DLP, Pohlig-Hellman, ECDSA nonce reuse, Ed25519 torsion side channel, DSA nonce reuse, DSA key recovery via MD5 collision on k-generation, X25519 low-order points + all-zero check
+- [dh-attacks.md](dh-attacks.md) - Classic finite-field DH: trivial g (0/1/p-1), Pohlig-Hellman when p-1 smooth, small-subgroup confinement / Lim-Lee static key recovery via CRT, static vs ephemeral + Logjam downgrade triage
 - [zkp-and-advanced.md](zkp-and-advanced.md) - ZKP/graph 3-coloring, Z3 solver guide, garbled circuits, Shamir SSS, bigram constraint solving, race conditions, Groth16 broken setup, DV-SNARG forgery, KZG pairing oracle for permutation recovery, Shamir SSS reused polynomial coefficients
 - [prng.md](prng.md) - PRNG attacks (foundational): MT19937, MT float recovery via GF(2) magic matrix for token prediction, LCG, GF(2) matrix PRNG, V8 XorShift128+ Math.random state recovery via Z3, middle-square, deterministic RNG hill climbing, random-mode oracle, time-based seeds, C srand/rand synchronization via ctypes, password cracking, logistic map chaotic PRNG
 - [prng-attacks.md](prng-attacks.md) - PRNG attacks (CTF-era, 2017+): MT subset-sum seed recovery, MT19937 constraint propagation, Rule 86 cellular automaton reversal via Z3, Java LCG meet-in-the-middle partial modulo, LCG backward stepping via modular inverse, LFSR bit-fold ASCII parity, Z3 solve-time timing oracle, randcrack DSA k prediction, format-string PRNG seed offset, NTP-poisoned PRNG UUID XOR
@@ -206,6 +207,13 @@ See [rsa-attacks.md](rsa-attacks.md) and [advanced-math.md](advanced-math.md) fo
 - **BB-84 QKD MITM:** Simulated BB-84 without authenticated classical channels allows full MITM -- independently negotiate keys with both parties, force constant value to one side. See [exotic-crypto-2.md](exotic-crypto-2.md#bb-84-quantum-key-distribution-mitm-attack-plaidctf-2017).
 
 See [ecc-attacks.md](ecc-attacks.md), [advanced-math.md](advanced-math.md), and [exotic-crypto.md](exotic-crypto.md) for full code examples.
+
+## Diffie-Hellman Attacks
+
+- **Trivial g:** Try `g = 0, 1, p-1` and peer values `A = 0, 1, p-1, p` first; unvalidated range checks give known-constant secrets. See [dh-attacks.md](dh-attacks.md#trivial-generator-values-g--0-1-p-1).
+- **Pohlig-Hellman:** Factor `p-1`; smooth means full DLP via BSGS per subgroup + CRT. See [dh-attacks.md](dh-attacks.md#pohlig-hellman-when-p-1-is-smooth).
+- **Small-subgroup confinement / Lim-Lee:** Static key + composite `p-1` with small factors; send order-`r` element, brute `b mod r` via MAC/decrypt oracle, CRT across `r_i`. See [dh-attacks.md](dh-attacks.md#small-subgroup-confinement--lim-lee-static-key-recovery-via-crt).
+- **X25519 low-order:** Cofactor 8 + clamping means small-order `u` forces all-zero `K`; `u = 0, 1` always probe. Missing all-zero check = 1-2 query break. See [ecc-attacks.md](ecc-attacks.md#x25519-low-order-points--all-zero-check-rfc-7748).
 
 ## Lattice / LWE Attacks
 
