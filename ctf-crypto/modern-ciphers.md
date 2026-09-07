@@ -163,7 +163,7 @@ Affine encryption `c = A*x + b (mod M)` with composite M: split into prime facto
 
 ```python
 import hashlib
-from Cryptodome.Cipher import AES
+from Crypto.Cipher import AES
 
 # Common key derivation chain:
 # 1. Recover secret bytes (s_bytes) from crypto challenge

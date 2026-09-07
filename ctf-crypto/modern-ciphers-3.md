@@ -140,12 +140,14 @@ for _ in range(2**40):
 
 ## CBC IV Forgery + Block Truncation for Authentication Bypass (0CTF 2017)
 
-**Pattern:** Service encrypts `MD5(padded_name) || padded_name` with AES-CBC. The MD5 serves as an integrity check on login. Two attacks combine: (1) IV manipulation: XOR IV bytes to change the decrypted first block from the source MD5 to the target MD5. (2) Block truncation: register with `pad("admin") + 16_junk_bytes`, then strip trailing ciphertext blocks — AES-CBC has no length field, so shorter ciphertext decrypts validly if PKCS7 padding is correct.
+**Pattern:** Service encrypts `MD5(padded_name) || padded_name` with AES-CBC. The MD5 serves as an integrity check on login. Two attacks combine: (1) IV manipulation: XOR IV bytes to change the decrypted first block from the source MD5 to the target MD5. (2) Block truncation: register with `pad(b"admin", 16) + 16_junk_bytes`, then strip trailing ciphertext blocks — AES-CBC has no length field, so shorter ciphertext decrypts validly if PKCS7 padding is correct.
 
 ```python
+from Crypto.Util.Padding import pad
+
 # Forge IV to flip MD5 from registered user to "admin"
-source_md5 = md5(pad("admin") + b"A"*16)
-target_md5 = md5(pad("admin"))
+source_md5 = md5(pad(b"admin", 16) + b"A"*16)
+target_md5 = md5(pad(b"admin", 16))
 new_iv = bytes(a ^ b ^ c for a, b, c in zip(original_iv, source_md5, target_md5))
 
 # Strip last 2 blocks (junk + PKCS padding block)
@@ -341,10 +343,12 @@ forged_mac = mac1 ^ mac2 ^ mac3  # XOR cancellation = fmac(cmdline)
 **Pattern:** Flawed HMAC computes `sha256((key XOR msg) + msg)` where `+` is bitwise addition (not concatenation). Sending `msg=0` gives `sha256(key)`. For bit position `i`, sending `msg=2^i`: if key bit `i` is set, XOR clears it and addition restores it, giving the same hash. (Midnight Sun CTF 2018)
 
 ```python
+from Crypto.Util.number import long_to_bytes
+
 key_hash = get_digest(b'\x00')  # sha256(key + 0) = sha256(key)
 key = 0
 for i in range(key_bits):
-    digest = get_digest(int_to_bytes(2**i))
+    digest = get_digest(long_to_bytes(2**i))
     if digest == key_hash:
         key |= (1 << i)  # bit i is set in key
 ```
