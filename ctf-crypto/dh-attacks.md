@@ -46,19 +46,12 @@ for guess_secret in (1, p - 1):
 Same primitive as [advanced-math.md](advanced-math.md#baby-step-giant-step-for-general-dlp): factor `p-1`, solve DLP per prime-power subgroup via BSGS, CRT combine. CTF pattern is server regenerating weak `p` per connection: retry until smooth.
 
 ```python
-from sympy.ntheory import discrete_log
-
 def pohlig_hellman_dh(g, h, p):
     """Solve g^x = h mod p when p-1 is smooth.
-    SymPy's discrete_log handles factorization, prime-power subgroup
-    BSGS, and CRT combination in a single call.
+    Hand-rolled BSGS per prime-power subgroup + sympy factorint/crt.
+    (sympy.ntheory.discrete_log is NOT used: it raises "Log does not
+    exist" on valid composite-order inputs, e.g. discrete_log(211, 2, 107).)
     """
-    try:
-        from sympy.ntheory import discrete_log
-        return int(discrete_log(p, h, g))
-    except ImportError:
-        pass
-    # Pure-Python fallback (see advanced-math.md for standalone bsgs/crt):
     from math import isqrt
     from sympy import factorint
     from sympy.ntheory.modular import crt

@@ -1003,6 +1003,8 @@ class TestCryptoSnippets(unittest.TestCase):
             rems.append(next(j for j in range(rr) if pow(ww, j, p) == ss))
         x, _ = crt(mods, rems)
         self.assertEqual(int(x % 105), b % 105)
+        # Pinned check: recovered residue solves the DH equation.
+        self.assertEqual(pow(g, int(x % 105), p), pow(g, b, p))
 
     # --- X25519: clamping + all-zero check shape ------------------------------
 
