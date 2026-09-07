@@ -1020,3 +1020,83 @@ class TestCryptoSnippets(unittest.TestCase):
         # All-zero check shape from RFC 7748: OR all bytes.
         self.assertTrue(all(v == 0 for v in bytes(32)))
         self.assertFalse(all(v == 0 for v in b"\x00" * 31 + b"\x01"))
+
+    # --- GHASH GF(2^128) 1-block H recovery (real AES-GCM e2e) ----------------
+
+    def test_ghash_recover_h_1block(self) -> None:
+        # Mirror of ctf-crypto/modern-ciphers.md fallback (NIST SP 800-38D Alg.1).
+        # End-to-end vs real AES-GCM: recover H from nonce-reuse pair, forge tag.
+        try:
+            from Crypto.Cipher import AES
+        except ImportError:
+            self.skipTest("pycryptodome not installed")
+        mask = (1 << 128) - 1
+        ident = 1 << 127
+
+        def gmul(x: int, y: int) -> int:
+            z, v = 0, y & mask
+            for i in range(128):
+                if (x >> (127 - i)) & 1:
+                    z ^= v
+                lsb = v & 1
+                v >>= 1
+                if lsb:
+                    v ^= 0xE1000000000000000000000000000000
+            return z & mask
+
+        def gpow(a: int, e: int) -> int:
+            r = ident
+            while e:
+                if e & 1:
+                    r = gmul(r, a)
+                a = gmul(a, a)
+                e >>= 1
+            return r
+
+        self.assertEqual(gmul(0xBEEF, ident), 0xBEEF)
+        key, nonce = bytes(range(16)), b"\x00" * 12
+        c1, t1 = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt_and_digest(b"A" * 16)
+        c2, t2 = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt_and_digest(b"B" * 16)
+        C1, C2 = int.from_bytes(c1, "big"), int.from_bytes(c2, "big")
+        T1, T2 = int.from_bytes(t1, "big"), int.from_bytes(t2, "big")
+        D, T = (C1 ^ C2) & mask, (T1 ^ T2) & mask
+        # H^2 = T/D (length block forces quadratic), then sqrt via 127 squarings.
+        U = gmul(T, gpow(D, (1 << 128) - 2))
+        for _ in range(127):
+            U = gmul(U, U)
+        H = U
+
+        def ghash_1block(h: int, cc: int) -> int:
+            return gmul(gmul(cc, h) ^ 128, h)
+
+        E0 = T1 ^ ghash_1block(H, C1)
+        self.assertEqual(E0, T2 ^ ghash_1block(H, C2))
+        c3 = bytes([c1[0] ^ 0xFF]) + c1[1:]
+        t3 = (ghash_1block(H, int.from_bytes(c3, "big")) ^ E0).to_bytes(16, "big")
+        AES.new(key, AES.MODE_GCM, nonce=nonce).decrypt_and_verify(c3, t3)
+
+    # --- Modular sqrt via sympy (p % 4 == 1) ----------------------------------
+
+    def test_mod_sqrt_p1mod4(self) -> None:
+        if pytest is not None:
+            pytest.importorskip("sympy")
+        else:
+            try:
+                import sympy  # noqa: F401
+            except ImportError:
+                self.skipTest("sympy not installed")
+        from sympy.ntheory import sqrt_mod
+
+        p = 2**255 - 19  # Curve25519 prime, 1 mod 4
+        self.assertEqual(p % 4, 1)
+        for n in range(41):  # 41 is also 1 mod 4: exhaustive check
+            try:
+                r = sqrt_mod(n, 41, all_roots=False)
+            except ValueError:
+                r = None
+            if r is None:
+                self.assertNotEqual(pow(n, 20, 41), 1)
+                continue
+            self.assertEqual((int(r) * int(r)) % 41, n % 41)
+        r = int(sqrt_mod(pow(12345, 2, p), p, all_roots=False))
+        self.assertEqual((r * r) % p, pow(12345, 2, p))

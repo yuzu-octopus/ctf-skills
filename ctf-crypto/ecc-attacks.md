@@ -88,6 +88,38 @@ def is_smooth(n, bound=1_000_000):
     except ValueError:  # n==1
         return True
 
+def _mod_sqrt(n, p):
+    """sqrt(n) mod odd prime p, or None if non-residue. sympy first, TS fallback."""
+    try:
+        from sympy.ntheory import sqrt_mod
+        r = sqrt_mod(n, p, all_roots=False)  # returns root or raises
+        return int(r)
+    except Exception:
+        pass
+    # Fallback Tonelli-Shanks (no dependency).
+    if n == 0:
+        return 0
+    if pow(n, (p - 1) // 2, p) != 1:
+        return None
+    if p % 4 == 3:
+        return pow(n, (p + 1) // 4, p)
+    q, s = p - 1, 0  # p-1 = q * 2^s with q odd
+    while q % 2 == 0:
+        q //= 2
+        s += 1
+    z = 2
+    while pow(z, (p - 1) // 2, p) != p - 1:
+        z += 1
+    m, c, t, r = s, pow(z, q, p), pow(n, q, p), pow(n, (q + 1) // 2, p)
+    while t != 1:
+        i, tmp = 1, pow(t, 2, p)
+        while tmp != 1:
+            tmp = pow(tmp, 2, p)
+            i += 1
+        b = pow(c, 1 << (m - i - 1), p)
+        m, c, t, r = i, pow(b, 2, p), (t * b * b) % p, (r * b) % p
+    return r
+
 def point_of_order(E, N, r):
     """Return random point of exact order r on curve E (curve order N, r|N)."""
     # E: ecdsa CurveFp object; need point sampling via brute x
@@ -97,12 +129,14 @@ def point_of_order(E, N, r):
     while True:
         x = random.randrange(p)
         rhs = (pow(x, 3, p) + a * x + b) % p
-        # Tonelli-Shanks via pow if p %4==3 else generic; use simple Legendre
-        if pow(rhs, (p - 1) // 2, p) != 1:
-            continue
-        y = pow(rhs, (p + 1) // 4, p) if p % 4 == 3 else None
-        if y is None:
-            continue  # skip generic case for brevity; use Sage for p%4!=3
+        if rhs == 0:
+            y = 0
+        else:
+            if pow(rhs, (p - 1) // 2, p) != 1:  # Euler criterion: non-residue
+                continue
+            y = _mod_sqrt(rhs, p)  # generic Tonelli-Shanks, works for any odd p
+            if y is None:
+                continue
         for yy in (y, p - y):
             try:
                 P = Point(E, x, yy, order=None)
