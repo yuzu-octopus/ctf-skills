@@ -72,6 +72,7 @@ flag = pow(c, real_d, n)
 ```python
 from sympy.ntheory.residues import nthroot_mod
 from sympy.ntheory.modular import crt
+from Crypto.Util.number import long_to_bytes
 
 primes = [p1, p2, ..., p13]  # All ≡ 1 mod 3
 
@@ -198,6 +199,7 @@ When `gcd(e, phi(n)) = g > 1`, standard RSA decryption fails because `d = e^(-1)
 4. Take g-th root: iterate candidate m values where `pow(m, g, n) == m^g`
 
 ```python
+from math import gcd
 from sympy import factorint, mod_inverse
 from gmpy2 import iroot
 
@@ -228,13 +230,12 @@ else:
 When multiple RSA moduli share a common prime factor (due to faulty hardware RNG, smartcard bugs, or weak seeding):
 
 ```python
-from math import gcd
-from functools import reduce
+from math import gcd, prod
 
 def batch_gcd(moduli):
     """Find shared factors among a list of RSA moduli"""
-    # Product tree
-    product = reduce(lambda a, b: a * b, moduli)
+    # Product tree via math.prod
+    product = prod(moduli)
 
     factors = {}
     for n in moduli:
@@ -344,10 +345,11 @@ def implicit_lsb_sage(N1, N2, t):
 import gmpy2
 # dp, dq, qinv extracted from partial PEM; e is known (usually 65537)
 for k in range(3, e):
-    p_candidate = (dp * e - 1) // k + 1
-    if gmpy2.is_prime(p_candidate):
-        p = p_candidate
-        break
+    if (dp * e - 1) % k == 0:
+        p_candidate = (dp * e - 1) // k + 1
+        if gmpy2.is_prime(p_candidate):
+            p = p_candidate
+            break
 # Similarly recover q from dq; verify qinv * q % p == 1
 ```
 
@@ -617,10 +619,8 @@ n = signature ** e - PKCS1_pad(h.hexdigest())
 **Exploit:**
 ```python
 from math import isqrt
-from sympy import Poly, symbols
 
 def factor_dependent_n(n, e, max_k=100000):
-    p_sym = symbols('p')
     for k in range(2, max_k, 2):
         # e*q = k*p + 1 and n = p*q  =>  e*n = p*(k*p + 1)
         # Solve k*p^2 + p - e*n = 0  => p = (-1 + sqrt(1+4*k*e*n)) / (2*k)

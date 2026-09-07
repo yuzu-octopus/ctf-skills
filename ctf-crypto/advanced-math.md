@@ -679,6 +679,9 @@ p_factor = math.gcd(B, n)  # gives p
 Over F_p, the quaternion algebra H_p ≅ M_2(F_p) (Wedderburn theorem), so the quaternion's multiplicative order divides p²-1. Decrypt using:
 
 ```python
+from sympy.ntheory.modular import crt
+from Crypto.Util.number import long_to_bytes
+
 # Group order for quaternions over F_p divides p²-1
 d_p = pow(e, -1, p**2 - 1)
 d_q = pow(e, -1, q**2 - 1)
@@ -689,8 +692,8 @@ enc_mod_q = [[x % q for x in row] for row in enc_matrix]
 dec_p = matrix_pow(enc_mod_p, d_p, p)
 dec_q = matrix_pow(enc_mod_q, d_q, q)
 
-# CRT combine: dec_matrix[0][0] = m (the flag)
-m = CRT(dec_p[0][0], dec_q[0][0], p, q)
+# CRT combine: dec_matrix[0][0] = m (the flag) via sympy.ntheory.modular.crt
+m, _ = crt([p, q], [dec_p[0][0], dec_q[0][0]])
 flag = long_to_bytes(m)
 ```
 
@@ -827,11 +830,13 @@ while oracle(encrypt(f1)) == "below":  # multiply ciphertext by f1^e mod n
     f1 *= 2
 # f1/2 < threshold/k <= f1, so k is in [threshold/f1, threshold/(f1/2)]
 
+from Crypto.Util.number import ceil_div
+
 # Phase 2: Binary search for exact key
 lo, hi = 0, threshold
 while lo < hi:
     mid = (lo + hi) // 2
-    f_test = ceil(threshold, mid + 1)  # f such that k*f >= threshold iff k > mid
+    f_test = ceil_div(threshold, mid + 1)  # f such that k*f >= threshold iff k > mid
     if oracle(encrypt(f_test)) == "above":
         hi = mid
     else:

@@ -47,8 +47,10 @@ def small_e_attack(c, e):
     return None
 
 # Usage
+from Crypto.Util.number import long_to_bytes
 m = small_e_attack(c, e=3)
-print(bytes.fromhex(hex(m)[2:]))
+if m is not None:
+    print(long_to_bytes(m))
 ```
 
 **When it fails:** If `m^e > n` (message padded or large), the modular reduction destroys the simple root. In that case, try Hastad's broadcast attack or Coppersmith's short-pad attack.
@@ -64,14 +66,11 @@ from math import gcd
 
 def common_modulus_attack(c1, c2, e1, e2, n):
     """Recover plaintext from two encryptions with same n, coprime e1/e2."""
-    # Extended GCD: find a, b such that a*e1 + b*e2 = 1
-    def extended_gcd(a, b):
-        if a == 0: return b, 0, 1
-        g, x, y = extended_gcd(b % a, a)
-        return g, y - (b // a) * x, x
-
-    g, a, b = extended_gcd(e1, e2)
-    assert g == 1, "e1 and e2 must be coprime"
+    # Bezout coefficients: find a, b such that a*e1 + b*e2 = 1
+    # Via pow() modular inverse (or gmpy2.gcdext); requires gcd(e1, e2) == 1
+    assert gcd(e1, e2) == 1, "e1 and e2 must be coprime"
+    a = pow(e1, -1, e2)
+    b = (1 - a * e1) // e2
 
     # m = c1^a * c2^b mod n
     # Handle negative exponent by using modular inverse
@@ -94,28 +93,14 @@ def common_modulus_attack(c1, c2, e1, e2, n):
 **Pattern:** Private exponent `d` is small (d < N^0.25). The continued fraction expansion of `e/n` reveals `d`.
 
 ```python
+from sympy import Rational
+from sympy.ntheory.continued_fraction import continued_fraction_convergents, continued_fraction_iterator
+
 def wiener_attack(e, n):
     """Recover d when d < N^0.25 using continued fraction expansion of e/n."""
-    def continued_fraction(num, den):
-        cf = []
-        while den:
-            q, r = divmod(num, den)
-            cf.append(q)
-            num, den = den, r
-        return cf
-
-    def convergents(cf):
-        convs = []
-        h0, h1 = 0, 1
-        k0, k1 = 1, 0
-        for a in cf:
-            h0, h1 = h1, a * h1 + h0
-            k0, k1 = k1, a * k1 + k0
-            convs.append((h1, k1))
-        return convs
-
-    cf = continued_fraction(e, n)
-    for k, d in convergents(cf):
+    # Continued fraction convergents via sympy
+    for frac in continued_fraction_convergents(continued_fraction_iterator(Rational(e, n))):
+        k, d = frac.p, frac.q
         if k == 0:
             continue
         # Check if d is valid: phi = (e*d - 1) / k must be integer
@@ -333,59 +318,39 @@ if result:
 import math, random
 from math import gcd, isqrt
 
-def williams_p1(n, B=100000):
-    """Factor n when p+1 is B-smooth for some prime factor p.
-
-    Uses Lucas sequence V_0=2, V_1=P, V_{2k}=V_k^2-2, V_{2k+1}=V_{k+1}*V_k - P.
-    Random P in [3, n-3]; M = product p^{floor(log_p B)}.
-    """
-    def lucas_v(P, k, n):
-        # fast doubling for V_k(P,1) mod n
+from sympy import primerange
+try:
+    import gmpy2
+    _lucas_v = lambda P, k, n: int(gmpy2.lucasv_mod(P, 1, k, n))
+except ImportError:
+    # Pure-Python doubling fallback
+    def _lucas_v(P, k, n):
         def rec(k):
             if k == 0:
-                return (2 % n, P % n)  # (V_0, V_1)
+                return (2 % n, P % n)
             Vk, Vk1 = rec(k >> 1)
-            # V_{2m}=V_m^2-2, V_{2m+1}=V_{m+1}*V_m - P
             V2m = (Vk * Vk - 2) % n
             V2m1 = (Vk1 * Vk - P) % n
             if k & 1:
-                # k=2m+1 => need (V_{2m+1}, V_{2m+2})
-                V2m2 = (Vk1 * Vk1 - 2) % n
-                return (V2m1, V2m2)
-            else:
-                return (V2m, V2m1)
+                return (V2m1, (Vk1 * Vk1 - 2) % n)
+            return (V2m, V2m1)
         return rec(k)[0]
 
-    # M = lcm(1..B) via prime powers
-    def smooth_lcm(B):
-        M = 1
-        primes = []
-        sieve = [True] * (B+1)
-        for i in range(2, B+1):
-            if sieve[i]:
-                primes.append(i)
-                step = i*i
-                if step <= B:
-                    for j in range(step, B+1, i):
-                        sieve[j] = False
-        for p in primes:
-            pe = p
-            while pe * p <= B:
-                pe *= p
-            M = (M * pe)  # may overflow Python int but B=1e5 manageable via looped exponentiation
-            if M > 10**12:  # keep iterative instead of huge M
-                break
-        return primes
+def williams_p1(n, B=100000):
+    """Factor n when p+1 is B-smooth for some prime factor p.
 
+    Uses Lucas sequence V_k(P, 1) mod n via gmpy2.lucasv_mod (with doubling fallback).
+    Primes up to B generated via sympy.primerange.
+    """
     P = random.randrange(3, min(n-1, 100))
     # Iterative exponentiation: V = V_{M} via successive prime powers (avoid huge M)
     V = P % n
-    for p in smooth_lcm(B):
+    for p in primerange(2, B + 1):
         pe = p
         while pe * p <= B:
             pe *= p
-        # V = V_{pe}(V)  — Lucas composition
-        V = lucas_v(V, pe, n)
+        # V = V_{pe}(V) mod n — Lucas composition
+        V = _lucas_v(V, pe, n)
         g = gcd(V - 2, n)
         if 1 < g < n:
             return g, n // g
@@ -440,25 +405,18 @@ def williams_p1_sage(n, B=100000):
 ```python
 from functools import reduce
 
+from sympy.ntheory.modular import crt
+from Crypto.Util.number import long_to_bytes
+import gmpy2
+
 def hastad_broadcast(ciphertexts, moduli, e):
     """Recover m from e encryptions with the same exponent e."""
     assert len(ciphertexts) >= e and len(moduli) >= e
 
-    # Chinese Remainder Theorem
-    def crt(remainders, moduli):
-        N = reduce(lambda a, b: a * b, moduli)
-        result = 0
-        for r, m in zip(remainders, moduli):
-            Ni = N // m
-            Mi = pow(Ni, -1, m)
-            result += r * Ni * Mi
-        return result % N
-
-    # CRT gives m^e (mod N1*N2*...*Ne)
+    # CRT gives m^e (mod N1*N2*...*Ne) via sympy
     # Since m < each Ni, m^e < N1*N2*...*Ne, so no modular reduction occurred
-    me = crt(ciphertexts[:e], moduli[:e])
+    me, _ = crt(moduli[:e], ciphertexts[:e])
 
-    import gmpy2
     m, exact = gmpy2.iroot(me, e)
     if exact:
         return int(m)
@@ -466,7 +424,8 @@ def hastad_broadcast(ciphertexts, moduli, e):
 
 # Usage (e=3, three encryptions)
 m = hastad_broadcast([c1, c2, c3], [n1, n2, n3], e=3)
-print(bytes.fromhex(hex(m)[2:]))
+if m is not None:
+    print(long_to_bytes(m))
 ```
 
 **Key insight:** CRT reconstructs `m^e` exactly (no modular reduction) because `m < min(n_i)` and therefore `m^e < n_1 * n_2 * ... * n_e`. Taking the integer eth root recovers `m`.
@@ -1104,13 +1063,11 @@ q = n // p
 When N is product of many small primes (not just p*q):
 ```python
 # Factor N (easier when many primes)
-from sympy import factorint
+from sympy import factorint, totient
 factors = factorint(n)  # Returns {p1: e1, p2: e2, ...}
 
-# Compute phi using all factors
-phi = 1
-for p, e in factors.items():
-    phi *= (p - 1) * (p ** (e - 1))
+# Compute phi directly via sympy.totient
+phi = totient(n)
 
 d = pow(e, -1, phi)
 plaintext = pow(ciphertext, d, n)
@@ -1220,14 +1177,16 @@ f2 = (n + B) // B * f1 // 2
 while not oracle((pow(f2, e, n) * c) % n):
     f2 += f1 // 2
 
+from Crypto.Util.number import ceil_div
+
 # Step 3: Binary search narrowing m to exact value
-mmin, mmax = ceil_div(n, f2), floor_div(n + B, f2)
+mmin, mmax = ceil_div(n, f2), (n + B) // f2
 while mmin < mmax:
-    f = floor_div(2 * B, mmax - mmin)
-    i = floor_div(f * mmin, n)
+    f = (2 * B) // (mmax - mmin)
+    i = (f * mmin) // n
     f3 = ceil_div(i * n, mmin)
     if oracle((pow(f3, e, n) * c) % n):
-        mmax = floor_div(i * n + B, f3)
+        mmax = (i * n + B) // f3
     else:
         mmin = ceil_div(i * n + B, f3)
 m = mmin
