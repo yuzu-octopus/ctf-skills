@@ -20,12 +20,10 @@ pip install "pwntools==4.15.0" "ROPgadget==7.7" "ropper==1.13.13"
 # or via script: bash scripts/install_ctf_tools.sh python
 ```
 
-**uv alternative (Python >=3.10):**
+**uv alternative:**
 ```bash
 uv venv && uv pip install "pwntools==4.15.0" "ROPgadget==7.7" "ropper==1.13.13"
 ```
-
-Supports Python >=3.10 (see `pyproject.toml` `requires-python`).
 
 **Linux (apt):**
 ```bash

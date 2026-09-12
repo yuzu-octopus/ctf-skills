@@ -102,7 +102,6 @@ gem_installed() {
 #
 # Format: "pip_name==version:import_name"
 # The import_name is used for skip-if-installed checks.
-# Supports Python >=3.10 (pyproject.toml `requires-python`).
 # uv alternative: uv venv && uv pip install "pwntools==4.15.0" "ROPgadget==7.7" "ropper==1.13.13"
 # Optional cross-arch (ARM/MIPS): apt install qemu-user qemu-user-static qemu-user-binfmt gdb-multiarch binutils-multiarch libc6-armhf-cross libc6-arm64-cross libc6-mips-cross
 # ---------------------------------------------------------------------------

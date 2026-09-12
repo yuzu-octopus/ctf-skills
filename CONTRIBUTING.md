@@ -6,7 +6,7 @@ Thanks for helping expand the CTF skills collection. This guide covers how to se
 
 ### Prerequisites
 
-- Python >=3.10
+- Python 3.12+
 - Node.js (for markdownlint)
 - [pre-commit](https://pre-commit.com/)
 
@@ -113,30 +113,26 @@ Frontmatter rules enforced by tests:
 
 ## Running Tests Locally
 
-Prefer `uv` for local verification (faster, isolated). Bare `python`/`python3` also works.
+Run tests with the project's Python (CI uses 3.14).
 
 ```bash
 # Run all tests
-uv run python -m pytest tests/ -v
-# or: python -m pytest tests/ -v
+python -m pytest tests/ -v
 
 # Run just the frontmatter validation
-uv run python -m pytest tests/test_skill_frontmatter.py -v
+python -m pytest tests/test_skill_frontmatter.py -v
 
 # Crypto snippet vectors (pure-Python, Sage fallbacks collapsed)
-uv run python -m pytest tests/test_crypto_snippets.py -v
-# or: python -m pytest tests/test_crypto_snippets.py -v
+python -m pytest tests/test_crypto_snippets.py -v
 
 # Verify all ctf-crypto python code blocks compile / syntax-check
-uv run python scripts/verify_crypto_examples.py
-# or: python scripts/verify_crypto_examples.py
+python scripts/verify_crypto_examples.py
 
 # Run the security auditor on a specific skill
-uv run python scripts/skill_security_auditor.py ctf-web --strict --json
-# or: python3 scripts/skill_security_auditor.py ctf-web --strict --json
+python3 scripts/skill_security_auditor.py ctf-web --strict --json
 ```
 
-Local scratch (one-off experiments, ad-hoc scripts) goes in `scratch/` or `debug.py` — both are gitignored. Committed test vectors live under `tests/fixtures/` (explicitly not ignored). Don't commit `.venv/`/`venv/` or `/tmp/` either.
+Local scratch (one-off experiments, ad-hoc scripts) should not be committed. Keep the tree clean of `.venv/`/`venv/` and stray debug files.
 
 ### Running pre-commit checks manually
 

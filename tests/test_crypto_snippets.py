@@ -602,7 +602,7 @@ class TestCryptoSnippets(unittest.TestCase):
         p130 = (1 << 130) - 5  # 2^130-5 prime
         # toy single-block Poly1305: poly = m * r % p, tag = (poly + s) % 2^128
         # Use small ints so products < p and <2^128 for deterministic recovery
-        r_secret = 0x1234567890ABCDEF % p
+        r_secret = 0x1234567890ABCDEF % p130
         s_secret = 0xDEADBEEFCAFE1234 % (1 << 128)
         m1_int = 12345
         m2_int = 54321
