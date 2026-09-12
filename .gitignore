@@ -16,6 +16,10 @@ venv/
 *.swo
 *~
 
+# PayloadsAllTheThings — on-demand clone, not vendored
+ctf-web/payloads/
+.ctf-tools/
+
 # Generated
 _site/
 
