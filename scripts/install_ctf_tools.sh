@@ -146,7 +146,8 @@ gem_installed() {
 PIP_PACKAGES=(
   "pwntools==4.15.0:pwn"
   "pycryptodome==4.0.0:Crypto"
-  "z3-solver==5.3.1.0:z3"
+  # Pinned to 5.1.0.0 to match angr's exact requirement (angr==10.0.4.post1 pins z3-solver==5.1.0.0)
+  "z3-solver==5.1.0.0:z3"
   "sympy==1.14.0:sympy"
   "gmpy2==2.3.2:gmpy2"
   "hashpumpy==1.2:hashpumpy"
